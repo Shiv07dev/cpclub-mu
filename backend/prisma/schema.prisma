@@ -1,0 +1,447 @@
+// Prisma schema for CP Club, Marwadi University
+// Database: MySQL (XAMPP, localhost:3306, database: cp_club)
+// Run: npx prisma generate && npx prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+// MySQL supports native ENUMs via Prisma
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+}
+
+enum EventCategory {
+  Competition
+  Workshop
+  TechnicalTalk
+  HandsOnLab
+  FunAndCreative
+}
+
+enum EventMode {
+  Offline
+  Online
+  Hybrid
+}
+
+enum EventStatus {
+  DRAFT
+  UPCOMING
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  COMPLETED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ContestStatus {
+  DRAFT
+  ANNOUNCED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum AuditAction {
+  EVENT_CREATED
+  EVENT_UPDATED
+  EVENT_DELETED
+  REGISTRATION_CREATED
+  REGISTRATION_STATUS_CHANGED
+  ACHIEVEMENT_CREATED
+  ACHIEVEMENT_UPDATED
+  ACHIEVEMENT_DELETED
+  GALLERY_IMAGE_UPLOADED
+  GALLERY_IMAGE_DELETED
+  CONTEST_CREATED
+  CONTEST_UPDATED
+  CONTEST_DELETED
+  ADMIN_CREATED
+  ADMIN_UPDATED
+  ADMIN_DELETED
+  SITE_SETTINGS_UPDATED
+  REPORT_CREATED
+  REPORT_UPDATED
+  REPORT_DELETED
+}
+
+// ─── Admin users ──────────────────────────────────────────────────────────────
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique @db.VarChar(255)
+  name         String    @db.VarChar(255)
+  passwordHash String    @db.VarChar(255)
+  role         AdminRole @default(EDITOR)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@map("admins")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique @db.VarChar(512)
+  adminId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([adminId])
+  @@map("refresh_tokens")
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+// NOTE: MySQL has no native array type.
+// Array fields (rules, takeaways, overview, outcomes, agenda, prerequisites)
+// are stored as JSON strings and serialized/deserialized in the service layer.
+
+model Event {
+  id                   String        @id @default(cuid())
+  slug                 String        @unique @db.VarChar(300)
+  title                String        @db.VarChar(300)
+  shortDescription     String?       @db.VarChar(500)
+  description          String        @db.Text
+  category             EventCategory
+  mode                 EventMode?
+  status               EventStatus   @default(DRAFT)
+  eventDate            DateTime?
+  startTime            String?       @db.VarChar(20)
+  endTime              String?       @db.VarChar(20)
+  year                 Int
+  venue                String?       @db.VarChar(300)
+  speaker              String?       @db.VarChar(500)
+  organizer            String?       @default("Competitive Programming Club, ICT Department") @db.VarChar(300)
+  registrationDeadline DateTime?
+  maxParticipants      Int?
+  bannerImage          String?       @db.VarChar(1000)
+  eligibility          String?       @db.VarChar(1000)
+  // Array fields stored as JSON strings — use eventArrays helpers in services
+  rulesJson            String        @default("[]") @db.Text
+  takeawaysJson        String        @default("[]") @db.Text
+  overviewJson         String        @default("[]") @db.Text
+  outcomesJson         String        @default("[]") @db.Text
+  agendaJson           String        @default("[]") @db.Text
+  prerequisitesJson    String        @default("[]") @db.Text
+  audience             String?       @db.VarChar(500)
+  participants         Int?
+  isPublished          Boolean       @default(false)
+  upcoming             Boolean       @default(false)
+  registrationOpen     Boolean       @default(false)
+  reportBacked         Boolean       @default(false)
+  // Custom registration form fields defined by admin per event
+  // JSON: [{ id, label, type, required, placeholder?, options? }]
+  customFieldsJson     String        @default("[]") @db.Text
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  registrations Registration[]
+  gallery       GalleryImage[]
+  report        EventReport?
+
+  @@index([slug])
+  @@index([eventDate])
+  @@index([status])
+  @@index([year])
+  @@index([category])
+  @@map("events")
+}
+
+// ─── Registrations ────────────────────────────────────────────────────────────
+
+model Registration {
+  id               String             @id @default(cuid())
+  registrationId   String             @unique @db.VarChar(30)
+  eventId          String?
+  fullName         String             @db.VarChar(200)
+  enrollmentNumber String             @db.VarChar(50)
+  universityEmail  String             @db.VarChar(255)
+  personalEmail    String?            @db.VarChar(255)
+  phone            String             @db.VarChar(20)
+  semester         String             @db.VarChar(30)
+  program          String?            @db.VarChar(100)
+  department       String             @db.VarChar(100)
+  github           String?            @db.VarChar(500)
+  linkedin         String?            @db.VarChar(500)
+  leetcode         String?            @db.VarChar(500)
+  hackerrank       String?            @db.VarChar(500)
+  codeforces       String?            @db.VarChar(500)
+  interest         String             @db.VarChar(100)
+  reason           String?            @db.Text
+  teamName         String?            @db.VarChar(100)
+  teamMembersJson  String             @default("[]") @db.Text
+  experience       String?            @db.Text
+  customResponsesJson String?         @db.Text
+  status           RegistrationStatus @default(REGISTERED)
+  registeredAt     DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([enrollmentNumber])
+  @@index([universityEmail])
+  @@index([status])
+  @@index([registeredAt])
+  @@map("registrations")
+}
+
+// ─── Gallery ──────────────────────────────────────────────────────────────────
+
+model GalleryImage {
+  id           String   @id @default(cuid())
+  eventId      String
+  url          String   @db.VarChar(1000)
+  thumbnailUrl String?  @db.VarChar(1000)
+  caption      String?  @db.VarChar(500)
+  altText      String?  @db.VarChar(300)
+  displayOrder Int      @default(0)
+  isFeatured   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([isFeatured])
+  @@map("gallery_images")
+}
+
+// ─── Event Reports ────────────────────────────────────────────────────────────
+
+model EventReport {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  title       String   @db.VarChar(300)
+  content     String?  @db.LongText
+  documentUrl String?  @db.VarChar(1000)
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_reports")
+}
+
+// ─── Achievements ─────────────────────────────────────────────────────────────
+
+model Achievement {
+  id           String   @id @default(cuid())
+  title        String   @db.VarChar(400)
+  description  String   @db.Text
+  studentName  String   @db.VarChar(300)
+  studentId    String?  @db.VarChar(50)
+  eventName    String?  @db.VarChar(400)
+  organization String?  @db.VarChar(300)
+  year         String?  @db.VarChar(20)
+  result       String?  @db.VarChar(200)
+  imageUrl     String?  @db.VarChar(1000)
+  category     String?  @db.VarChar(100)
+  tag          String?  @db.VarChar(200)
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([year])
+  @@index([isPublished])
+  @@map("achievements")
+}
+
+// ─── Committee ────────────────────────────────────────────────────────────────
+
+model CommitteeMember {
+  id           String   @id @default(cuid())
+  name         String   @db.VarChar(200)
+  role         String   @db.VarChar(100)
+  badge        String?  @db.VarChar(100)
+  photoUrl     String?  @db.VarChar(1000)
+  bio          String?  @db.Text
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  isMentor     Boolean  @default(false)
+  isPseudoCore Boolean  @default(false)
+  socialLinksJson String? @db.Text  // stored as JSON string
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("committee_members")
+}
+
+// ─── Placements ───────────────────────────────────────────────────────────────
+
+model PlacementRecord {
+  id          String   @id @default(cuid())
+  studentName String   @db.VarChar(200)
+  company     String?  @db.VarChar(200)
+  package     String   @db.VarChar(50)
+  year        Int?
+  imageUrl    String?  @db.VarChar(1000)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("placement_records")
+}
+
+// ─── GATE Qualifications ──────────────────────────────────────────────────────
+
+model GateQualification {
+  id          String   @id @default(cuid())
+  studentName String   @db.VarChar(200)
+  exam        String   @db.VarChar(100)
+  paper       String   @db.VarChar(200)
+  year        Int?
+  achievement String?  @db.VarChar(300)
+  imageUrl    String?  @db.VarChar(1000)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("gate_qualifications")
+}
+
+// ─── Monthly Contests ─────────────────────────────────────────────────────────
+
+model Contest {
+  id                   String        @id @default(cuid())
+  name                 String        @db.VarChar(300)
+  slug                 String        @unique @db.VarChar(300)
+  description          String?       @db.Text
+  contestNumber        Int?
+  date                 DateTime?
+  startTime            String?       @db.VarChar(20)
+  duration             String?       @db.VarChar(50)
+  platform             String?       @db.VarChar(100)
+  registrationDeadline DateTime?
+  registrationLink     String?       @db.VarChar(1000)
+  status               ContestStatus @default(DRAFT)
+  rulesJson            String        @default("[]") @db.Text
+  prizesJson           String        @default("[]") @db.Text
+  maxParticipants      Int?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  registrations ContestRegistration[]
+  results       ContestResult[]
+
+  @@index([status])
+  @@index([date])
+  @@map("contests")
+}
+
+model ContestRegistration {
+  id               String   @id @default(cuid())
+  contestId        String
+  fullName         String   @db.VarChar(200)
+  enrollmentNumber String   @db.VarChar(50)
+  email            String   @db.VarChar(255)
+  phone            String?  @db.VarChar(20)
+  codeforcesHandle String?  @db.VarChar(50)
+  registeredAt     DateTime @default(now())
+
+  contest Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+
+  @@unique([contestId, enrollmentNumber])
+  @@unique([contestId, email])
+  @@index([contestId])
+  @@map("contest_registrations")
+}
+
+model ContestResult {
+  id            String    @id @default(cuid())
+  contestId     String
+  participantId String?
+  fullName      String    @db.VarChar(200)
+  rank          Int?
+  score         String?   @db.VarChar(100)
+  status        String?   @db.VarChar(50)
+  submittedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  contest Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+
+  @@index([contestId])
+  @@index([rank])
+  @@map("contest_results")
+}
+
+// ─── Site Settings ────────────────────────────────────────────────────────────
+
+model SiteSettings {
+  id              String   @id @default("singleton")
+  clubName        String   @default("Competitive Programming Club") @db.VarChar(200)
+  department      String   @default("Department of Information and Communication Technology") @db.VarChar(300)
+  university      String   @default("Marwadi University") @db.VarChar(200)
+  tagline         String   @default("Empowering students with strong problem-solving, algorithmic, and coding skills.") @db.VarChar(1000)
+  slogan          String   @default("Same Passion, Bigger Possibilities") @db.VarChar(300)
+  instagramHandle String   @default("@CPCLUB_MU") @db.VarChar(50)
+  instagramUrl    String   @default("https://www.instagram.com/cpclub_mu/") @db.VarChar(500)
+  contactEmail    String?  @db.VarChar(255)
+  contactPhone    String?  @db.VarChar(20)
+  announcement    String   @default("Follow @CPCLUB_MU on Instagram for the next event announcement.") @db.VarChar(1000)
+  heroTagline     String   @default("") @db.VarChar(500)
+  logoUrl         String?  @db.VarChar(1000)
+  updatedAt       DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  adminId   String
+  action    AuditAction
+  entity    String      @db.VarChar(100)
+  entityId  String?     @db.VarChar(100)
+  detailsJson String?   @db.Text
+  ipAddress String?     @db.VarChar(50)
+  createdAt DateTime    @default(now())
+
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Registration sequence counter ───────────────────────────────────────────
+
+model RegistrationCounter {
+  id      String @id @default("singleton")
+  current Int    @default(0)
+
+  @@map("registration_counter")
+}

@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cpclub-postgres
+    environment:
+      POSTGRES_USER: cpclub
+      POSTGRES_PASSWORD: cpclub_dev_password
+      POSTGRES_DB: cpclub
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpclub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cpclub-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://cpclub:cpclub_dev_password@postgres:5432/cpclub?schema=public"
+      NODE_ENV: development
+      PORT: 5000
+      JWT_SECRET: "local-dev-secret-change-in-prod"
+      JWT_REFRESH_SECRET: "local-dev-refresh-secret"
+      FRONTEND_URL: "http://localhost:3000"
+      STORAGE_PROVIDER: "local"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  postgres_data:
